@@ -1,0 +1,2 @@
+#!/bin/sh
+if  [[ -f /usr/local/qualys/cloud-agent/bin/qualys-cloud-agent.sh ]]; then /usr/local/qualys/cloud-agent/bin/qualys-cloud-agent.sh ActivationId=<ID> CustomerId=<ID>; else /Applications/QualysCloudAgent.app/Contents/MacOS/qualys-cloud-agent.sh ActivationId=<ID> CustomerId=<ID>; fi 
