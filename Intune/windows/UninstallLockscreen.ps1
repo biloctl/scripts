@@ -1,0 +1,1 @@
+Remove-Item C:\Windows\Web\Wallpaper\LockScreenWallpaper.jpg -force
