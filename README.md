@@ -1,24 +1,24 @@
 # scripts
 
-A collection of PowerShell (and Bash) scripts I've written for day-to-day administration of Microsoft 365, Entra ID / Active Directory, Exchange Online, SharePoint, OneDrive, Windows endpoints, and Intune. Most are small, single-purpose tools driven by a CSV or a few variables at the top.
+A collection of scripts and configuration profiles I've written for administering Microsoft 365, Entra ID / Active Directory, Exchange Online, SharePoint, OneDrive, and Windows/macOS endpoints via Intune. Most are small, single-purpose tools driven by a CSV or a few variables at the top.
 
-All scripts use placeholder values (e.g. `<UPN>`, `<ObjectID>`, `<your-tenant>`) that you'll need to fill in before running.
+All scripts use placeholder values (e.g. `<UPN>`, `<ObjectID>`, `<TenantID>`) that you'll need to fill in before running.
 
 ## Repository layout
 
 ```
 scripts/
-├── powershell/        General admin scripts (M365, Entra/AD, Exchange, SharePoint)
-└── intune/            Scripts written to be deployed through Intune
-    ├── powershell/
-    └── bash/
+├── powershell/      General admin PowerShell (M365 / Entra / AD / Exchange / SharePoint)
+└── intune/          Scripts and profiles deployed through Intune
+    ├── windows/
+    └── macos/
 ```
-
-The rule of thumb: if a script is written to be *deployed through Intune* (Win32 app install/detect, remediation, platform scripts), it lives under `intune/`. If it's something run interactively as an admin, it lives in the top-level `powershell/`.
 
 ---
 
-## General admin — `powershell/`
+## `powershell/`
+
+General administration, run interactively (or scheduled) by an admin.
 
 ### Identity & Groups
 - **AddLocalADMPlatformScript.ps1** — Adds a single Azure AD user to the local Administrators group.
@@ -41,11 +41,14 @@ The rule of thumb: if a script is written to be *deployed through Intune* (Win32
 - **TrimJobViaCSV.ps1** — Kicks off version trim jobs on SharePoint sites listed in a CSV (where auto-trimming is already enabled).
 - **Restrict_Copilot_From_SharePoint.ps1** — Restricts org-wide search discoverability (limiting Copilot exposure) on SharePoint sites listed in a CSV.
 
+### Endpoint
+- **HP_Debloater.ps1** — Removes HP and Microsoft preinstalled bloatware from Windows devices; intended to run during an Autopilot/provisioning process.
+
 ---
 
-## Intune — `intune/powershell/`
+## `intune/windows/`
 
-These are written to run under Intune (Win32 app install/detect, platform scripts, remediations). Most run as SYSTEM in 64-bit PowerShell.
+Written to run under Intune (Win32 app install/detect, platform scripts, remediations). Most run as SYSTEM in 64-bit PowerShell.
 
 - **Install-CopilotRemoval.ps1** — Removes the Microsoft Copilot app from Windows and prevents it for new users, falling back to a policy disable on legacy builds. Logs to `C:\ProgramData\IntuneScripts\RemoveCopilot\`.
 - **Detect-CopilotRemoved.ps1** — Detection script that reports success when Copilot is absent (no AppX, no provisioned package) or disabled by policy.
@@ -55,9 +58,20 @@ These are written to run under Intune (Win32 app install/detect, platform script
 - **uninstall-githubdesktop.ps1** — Uninstalls GitHub Desktop (per-user Squirrel install and/or MSI) and removes desktop shortcuts. *(Note: helper functions are defined but the main calling block is not yet wired up.)*
 - **Upload-AutopilotHash.ps1** — Zero-touch upload of a device's Autopilot hardware hash to Intune via Microsoft Graph, authenticating as a service principal with a LocalMachine certificate and tagging the device with a group tag. Requires the `WindowsAutopilotIntune` module and an app registration with `DeviceManagementServiceConfig.ReadWrite.All`.
 
-## Intune — `intune/bash/`
+## `intune/macos/`
 
-Bash scripts for Intune-managed devices. *(Coming.)*
+Shell scripts and `.mobileconfig` configuration profiles for macOS endpoints.
+
+### Scripts
+- **DeviceRename.sh** — Renames the Mac (ComputerName, LocalHostName, HostName) to a prefix plus the hardware serial number.
+- **LocationServices.sh** — Enables macOS Location Services by writing the locationd preference (generic and UUID-scoped keys), fixing ownership, and restarting locationd.
+- **MacLocationOn.sh** — Identical to LocationServices.sh (duplicate; enables Location Services).
+- **promot-to-admin.sh** — Promotes the currently logged-in console user to the local admin group, with checks for valid user and existing membership.
+- **QualysActivation.zsh** — Activates the Qualys Cloud Agent using an ActivationId and CustomerId, handling both the standard and app-bundle install paths.
+
+### Profiles
+- **pppcFullDiskAccess.mobileconfig** — PPPC (TCC) profile granting OneDrive Full Disk Access, matched to Microsoft's published OneDrive code-signing identity.
+- **SilentKFMOneDrive.mobileconfig** — OneDrive Known Folder Move profile: silent opt-in for the tenant, blocks opt-out, enables Files On-Demand, and disables personal sync.
 
 ---
 
@@ -69,6 +83,7 @@ Depending on which script you run, you'll need one or more of the following Powe
 - **ExchangeOnlineManagement** — for the Exchange Online / distribution group scripts
 - **Microsoft.Online.SharePoint.PowerShell** — for the SharePoint and OneDrive scripts
 - **ActiveDirectory** (RSAT) — for the on-prem AD scripts
+- **WindowsAutopilotIntune** — for the Autopilot hash upload script
 
 Most scripts connect with a `Connect-*` cmdlet at the top and will prompt for sign-in. The Intune scripts generally assume they're running as SYSTEM via the Intune Management Extension.
 
