@@ -1,34 +1,65 @@
 # scripts
 
-A collection of PowerShell scripts I've written for day-to-day administration of Microsoft 365, Entra ID / Active Directory, Exchange Online, SharePoint, OneDrive, and Windows endpoints. Most are small, single-purpose tools driven by a CSV or a few variables at the top.
+A collection of PowerShell (and Bash) scripts I've written for day-to-day administration of Microsoft 365, Entra ID / Active Directory, Exchange Online, SharePoint, OneDrive, Windows endpoints, and Intune. Most are small, single-purpose tools driven by a CSV or a few variables at the top.
 
 All scripts use placeholder values (e.g. `<UPN>`, `<ObjectID>`, `<your-tenant>`) that you'll need to fill in before running.
 
-## Scripts
+## Repository layout
+
+```
+scripts/
+├── powershell/        General admin scripts (M365, Entra/AD, Exchange, SharePoint)
+└── intune/            Scripts written to be deployed through Intune
+    ├── powershell/
+    └── bash/
+```
+
+The rule of thumb: if a script is written to be *deployed through Intune* (Win32 app install/detect, remediation, platform scripts), it lives under `intune/`. If it's something run interactively as an admin, it lives in the top-level `powershell/`.
+
+---
+
+## General admin — `powershell/`
 
 ### Identity & Groups
-- **powershell/AddLocalADMPlatformScript.ps1** — Adds a single Azure AD user to the local Administrators group.
-- **powershell/AddLocalAdminCloudWKS.ps1** — Adds one or more Azure AD users to the local Administrators group, looping through a list and skipping any already present.
-- **powershell/Bulk_User_Add_Cloud_SG.ps1** — Bulk-adds users to a cloud (Entra) security group from a CSV of UPNs, using Microsoft Graph.
-- **powershell/CSV_User_Add_Security_Group.ps1** — Adds users to a cloud security group from a CSV of UPNs via Microsoft Graph, with per-user success/failure output.
-- **powershell/Export_User_Entire_OU.ps1** — Exports all user UPNs from a given Active Directory OU to a CSV.
-- **powershell/OnPremADGroupRemoval.ps1** — Removes users from on-prem AD groups based on a CSV mapping of UPN to group.
+- **AddLocalADMPlatformScript.ps1** — Adds a single Azure AD user to the local Administrators group.
+- **AddLocalAdminCloudWKS.ps1** — Adds one or more Azure AD users to the local Administrators group, looping through a list and skipping any already present.
+- **Bulk_User_Add_Cloud_SG.ps1** — Bulk-adds users to a cloud (Entra) security group from a CSV of UPNs, using Microsoft Graph.
+- **CSV_User_Add_Security_Group.ps1** — Adds users to a cloud security group from a CSV of UPNs via Microsoft Graph, with per-user success/failure output.
+- **Export_User_Entire_OU.ps1** — Exports all user UPNs from a given Active Directory OU to a CSV.
+- **OnPremADGroupRemoval.ps1** — Removes users from on-prem AD groups based on a CSV mapping of UPN to group.
 
 ### Exchange & Mail
-- **powershell/AddUsertoMultiMailboxPerms.ps1** — Grants a user FullAccess and SendAs permissions across multiple mailboxes listed in a CSV.
-- **powershell/CSVDistroMemberAdd.ps1** — Creates a new cloud distribution group and adds members to it from a CSV.
-- **powershell/Mailbox_Size_UPN.ps1** — Reports mailbox size and statistics (item count, last logon, etc.) for users listed in a CSV.
-- **powershell/OnPremDLConversion.ps1** — Migrates an on-prem distribution list to a cloud Exchange Online group: copies members and owners, then clears the mail/proxy addresses from the old group.
+- **AddUsertoMultiMailboxPerms.ps1** — Grants a user FullAccess and SendAs permissions across multiple mailboxes listed in a CSV.
+- **CSVDistroMemberAdd.ps1** — Creates a new cloud distribution group and adds members to it from a CSV.
+- **Mailbox_Size_UPN.ps1** — Reports mailbox size and statistics (item count, last logon, etc.) for users listed in a CSV.
+- **OnPremDLConversion.ps1** — Migrates an on-prem distribution list to a cloud Exchange Online group: copies members and owners, then clears the mail/proxy addresses from the old group.
 
 ### SharePoint & OneDrive
-- **powershell/AutoVersionViaCSV.ps1** — Enables auto-expiration version trimming on specific SharePoint sites listed in a CSV.
-- **powershell/IntelligentVersionTrimJob.ps1** — Enables auto versioning across all SharePoint sites in the tenant and kicks off trim jobs.
-- **powershell/OneDriveIntelligentVersion_TrimJob.ps1** — Enables auto-expiration version trimming on all OneDrive sites and starts trim jobs.
-- **powershell/TrimJobViaCSV.ps1** — Kicks off version trim jobs on SharePoint sites listed in a CSV (where auto-trimming is already enabled).
-- **powershell/Restrict_Copilot_From_SharePoint.ps1** — Restricts org-wide search discoverability (limiting Copilot exposure) on SharePoint sites listed in a CSV.
+- **AutoVersionViaCSV.ps1** — Enables auto-expiration version trimming on specific SharePoint sites listed in a CSV.
+- **IntelligentVersionTrimJob.ps1** — Enables auto versioning across all SharePoint sites in the tenant and kicks off trim jobs.
+- **OneDriveIntelligentVersion_TrimJob.ps1** — Enables auto-expiration version trimming on all OneDrive sites and starts trim jobs.
+- **TrimJobViaCSV.ps1** — Kicks off version trim jobs on SharePoint sites listed in a CSV (where auto-trimming is already enabled).
+- **Restrict_Copilot_From_SharePoint.ps1** — Restricts org-wide search discoverability (limiting Copilot exposure) on SharePoint sites listed in a CSV.
 
-### Endpoint / Device
-- **powershell/HP_Debloater.ps1** — Removes HP and Microsoft preinstalled bloatware from Windows endpoints; intended to run during an Autopilot/provisioning process.
+---
+
+## Intune — `intune/powershell/`
+
+These are written to run under Intune (Win32 app install/detect, platform scripts, remediations). Most run as SYSTEM in 64-bit PowerShell.
+
+- **Install-CopilotRemoval.ps1** — Removes the Microsoft Copilot app from Windows and prevents it for new users, falling back to a policy disable on legacy builds. Logs to `C:\ProgramData\IntuneScripts\RemoveCopilot\`.
+- **Detect-CopilotRemoved.ps1** — Detection script that reports success when Copilot is absent (no AppX, no provisioned package) or disabled by policy.
+- **SetBackground.ps1** — Sets the desktop wallpaper via the registry and drops a marker file so deployment can be detected.
+- **Background_Detection_Script.ps1** — Detection script that checks whether the wallpaper file is present.
+- **UninstallLockscreen.ps1** — Removes the lock-screen wallpaper file.
+- **uninstall-githubdesktop.ps1** — Uninstalls GitHub Desktop (per-user Squirrel install and/or MSI) and removes desktop shortcuts. *(Note: helper functions are defined but the main calling block is not yet wired up.)*
+- **Upload-AutopilotHash.ps1** — Zero-touch upload of a device's Autopilot hardware hash to Intune via Microsoft Graph, authenticating as a service principal with a LocalMachine certificate and tagging the device with a group tag. Requires the `WindowsAutopilotIntune` module and an app registration with `DeviceManagementServiceConfig.ReadWrite.All`.
+
+## Intune — `intune/bash/`
+
+Bash scripts for Intune-managed devices. *(Coming.)*
+
+---
 
 ## Prerequisites
 
@@ -39,7 +70,7 @@ Depending on which script you run, you'll need one or more of the following Powe
 - **Microsoft.Online.SharePoint.PowerShell** — for the SharePoint and OneDrive scripts
 - **ActiveDirectory** (RSAT) — for the on-prem AD scripts
 
-Most scripts connect with a `Connect-*` cmdlet at the top and will prompt for sign-in.
+Most scripts connect with a `Connect-*` cmdlet at the top and will prompt for sign-in. The Intune scripts generally assume they're running as SYSTEM via the Intune Management Extension.
 
 ## Notes
 
