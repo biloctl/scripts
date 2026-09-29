@@ -74,6 +74,14 @@ alias, owners, members (including nested groups and members with no email addres
 Send-As and Send-on-Behalf, join/leave restrictions, hidden-from-GAL, delivery report settings.
 `CustomAttribute15` is stamped `MigratedFrom:<address>` on every migrated group.
 
+**Mailbox forwarding to the group.** A mailbox set to forward to a DL by *object reference*
+(`ForwardingAddress`) would silently stop forwarding when the synced object is deleted. The export
+lists these mailboxes in a `ForwardingFrom` column; the migrate script captures them per group and,
+right after cutover, converts each one to `ForwardingSmtpAddress` (address-based, so it survives
+future object changes), preserving `DeliverToMailboxAndForward`. Verify fails the group if any
+re-point didn't take. Only Exchange Online mailboxes are checked; on-prem mailboxes forwarding to
+the group need the equivalent done in on-prem Exchange.
+
 ## Safety checks
 
 The migrate script refuses a row (without touching anything) when:

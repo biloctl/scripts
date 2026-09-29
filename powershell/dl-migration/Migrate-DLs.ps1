@@ -187,6 +187,8 @@ function Step-Export($smtp) {
                       Name, RecipientTypeDetails
     $sendAs = @(Invoke-EXO { Get-RecipientPermission -Identity $smtp -ErrorAction SilentlyContinue } |
         Where-Object { $_.Trustee -ne 'NT AUTHORITY\SELF' } | Select-Object -Expand Trustee)
+    # Mailboxes forwarding to this group by object reference - these dangle once the synced object is deleted
+    $fwd = @(Get-ForwardingMailboxes $smtp | ForEach-Object { @{ Mailbox = "$($_.PrimarySmtpAddress)"; DeliverAndForward = [bool]$_.DeliverToMailboxAndForward } })
     [ordered]@{
         Name=$g.Name; DisplayName=$g.DisplayName; Alias=$g.Alias; PrimarySmtpAddress=$smtp
         EmailAddresses=@($g.EmailAddresses | ForEach-Object { $_.ToString() }); LegacyExchangeDN=$g.LegacyExchangeDN
@@ -203,7 +205,35 @@ function Step-Export($smtp) {
         MemberJoinRestriction=$g.MemberJoinRestriction.ToString(); MemberDepartRestriction=$g.MemberDepartRestriction.ToString()
         ReportToManagerEnabled=$g.ReportToManagerEnabled; ReportToOriginatorEnabled=$g.ReportToOriginatorEnabled
         SendOofMessageToOriginatorEnabled=$g.SendOofMessageToOriginatorEnabled
+        ForwardingMailboxes=$fwd
     } | ConvertTo-Json -Depth 5 | Set-Content (ExportFile $smtp) -Encoding UTF8
+    if ($fwd.Count) { Log "  $smtp: $($fwd.Count) mailbox(es) forward to this group by reference - will be re-pointed after cutover: $($fwd.Mailbox -join ', ')" }
+}
+
+# Cloud mailboxes whose ForwardingAddress resolves to this group. Index is built once per run.
+$script:FwdIndex = $null
+function Get-ForwardingMailboxes($smtp) {
+    if ($null -eq $script:FwdIndex) {
+        Log "Indexing mailbox forwarding references (once per run)..."
+        $script:FwdIndex = @{}
+        Invoke-EXO { Get-Mailbox -ResultSize Unlimited -Filter "ForwardingAddress -ne `$null" } | ForEach-Object {
+            $t = Get-Recipient -Identity $_.ForwardingAddress -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($t) { $k = "$($t.PrimarySmtpAddress)".ToLower(); if (-not $script:FwdIndex[$k]) { $script:FwdIndex[$k] = @() }; $script:FwdIndex[$k] += $_ }
+        }
+    }
+    @($script:FwdIndex[$smtp.ToLower()])
+}
+
+# After cutover: convert dangling ForwardingAddress references to ForwardingSmtpAddress (address-based, survives future object changes)
+function Step-RepointForwarding($smtp) {
+    $e = Get-Content (ExportFile $smtp) -Raw | ConvertFrom-Json
+    foreach ($f in @($e.ForwardingMailboxes)) {
+        if (-not $f.Mailbox) { continue }
+        try {
+            Invoke-EXO { Set-Mailbox -Identity $f.Mailbox -ForwardingAddress $null -ForwardingSmtpAddress $smtp -DeliverToMailboxAndForward ([bool]$f.DeliverAndForward) -ErrorAction Stop }
+            Log "  Re-pointed forwarding: $($f.Mailbox) -> $smtp" 'OK'
+        } catch { Log "  Forwarding re-point FAILED for $($f.Mailbox) -> ${smtp}: $_" 'WARN' }
+    }
 }
 
 function Step-Create($smtp) {
@@ -311,7 +341,7 @@ function Wait-Removed($smtps) {
             if (-not $g -or -not $g.IsDirSynced) {
                 $pending.Remove($smtp) | Out-Null; Set-Status $smtp 'Removed'
                 # Cut over immediately - the address is unreachable until this happens
-                try { Step-Cutover $smtp; Set-Status $smtp 'Cutover'; Log "Cutover $smtp" 'OK' }
+                try { Step-Cutover $smtp; Set-Status $smtp 'Cutover'; Log "Cutover $smtp" 'OK'; Step-RepointForwarding $smtp }
                 catch { Log "$smtp cutover failed: $_" 'ERROR'; Set-Status $smtp 'Failed' "Cutover: $_" }
             }
         }
@@ -365,6 +395,12 @@ function Step-Verify($smtp) {
     $missing = @($expected | Where-Object { $_ -notin $now })
     $x500ok = -not $e.LegacyExchangeDN -or (@($g.EmailAddresses | ForEach-Object { "$_" }) -contains "X500:$($e.LegacyExchangeDN)")
     if (-not $x500ok) { return 'X500 missing' }
+    $badFwd = @(foreach ($f in @($e.ForwardingMailboxes)) {
+        if (-not $f.Mailbox) { continue }
+        $mb = Invoke-EXO { Get-Mailbox -Identity $f.Mailbox -ErrorAction SilentlyContinue }
+        if (-not $mb -or "$($mb.ForwardingSmtpAddress)" -notlike "*$smtp") { $f.Mailbox }
+    })
+    if ($badFwd.Count) { return "Forwarding not re-pointed: $($badFwd -join ';')" }
     $me = (Get-ConnectionInformation | Where-Object State -eq 'Connected' | Select-Object -First 1).UserPrincipalName
     if ($me -and -not ($e.ManagedBy -contains $me) -and $DefaultOwner -ne $me) {
         $currentOwners = @(Invoke-EXO { Get-DistributionGroup -Identity $smtp } | Select-Object -Expand ManagedBy |
@@ -406,7 +442,7 @@ while ($batchNo -lt $MaxBatches) {
 
     # Anything already Removed (e.g. from an interrupted run) is unreachable - cut over first, before any waiting
     foreach ($s in @($batch | Where-Object Status -eq 'Removed')) {
-        try { if ($PSCmdlet.ShouldProcess($s.Smtp,'Cutover')) { Step-Cutover $s.Smtp; Set-Status $s.Smtp 'Cutover'; Log "Cutover $($s.Smtp)" 'OK' } }
+        try { if ($PSCmdlet.ShouldProcess($s.Smtp,'Cutover')) { Step-Cutover $s.Smtp; Set-Status $s.Smtp 'Cutover'; Log "Cutover $($s.Smtp)" 'OK'; Step-RepointForwarding $s.Smtp } }
         catch { Log "$($s.Smtp) cutover failed: $_" 'ERROR'; Set-Status $s.Smtp 'Failed' "Cutover: $_" }
     }
 

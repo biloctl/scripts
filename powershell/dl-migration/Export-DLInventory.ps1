@@ -40,6 +40,14 @@ $Domain = (($SearchBase -split ',DC=',2)[1] -replace ',DC=','.')
 $adGroups = Get-ADGroup -Server $Domain -SearchBase $SearchBase -SearchScope Subtree -Filter "mail -like '*'" -Properties mail,DistinguishedName
 Write-Host "Found $($adGroups.Count) in AD. Looking up in Exchange Online..."
 
+# Map of group address -> mailboxes forwarding to it by object reference (ForwardingAddress). Built once.
+Write-Host "Indexing mailbox forwarding references..."
+$fwdIndex = @{}
+Get-Mailbox -ResultSize Unlimited -Filter "ForwardingAddress -ne `$null" | ForEach-Object {
+    $t = Get-Recipient -Identity $_.ForwardingAddress -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($t) { $k = "$($t.PrimarySmtpAddress)".ToLower(); if (-not $fwdIndex[$k]) { $fwdIndex[$k] = @() }; $fwdIndex[$k] += "$($_.PrimarySmtpAddress)" }
+}
+
 $i = 0
 $rows = foreach ($ad in $adGroups) {
     $i++; if ($i % 50 -eq 0) { Write-Host "  $i / $($adGroups.Count)" }
@@ -73,6 +81,7 @@ $rows = foreach ($ad in $adGroups) {
         HiddenFromGAL     = if ($g) { $g.HiddenFromAddressListsEnabled } else { '' }
         Moderated         = if ($g) { $g.ModerationEnabled } else { '' }
         RestrictedSenders = if ($g) { ($g.AcceptMessagesOnlyFromSendersOrMembers.Count -gt 0) } else { '' }
+        ForwardingFrom    = if ($g) { ($fwdIndex["$($g.PrimarySmtpAddress)".ToLower()] -join ';') } else { '' }
         AdDomain          = $Domain
         AdOU              = ($ad.DistinguishedName -split ',',2)[1]
         Note              = ($note -join '; ')
